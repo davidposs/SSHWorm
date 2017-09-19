@@ -97,9 +97,20 @@ def get_vulnerable_hosts(port):
 	return vulnerable_hosts
 
 
-def set_background(ssh, host):
+def set_background(ssh):
 	""" Downloads a new desktop background for remote system """
 	
+	ls_output = os.listdir(home_dir)
+	
+	if image_name not in ls_output:
+		print ("%s[o] Adding background..." % (offset))
+		os.system("wget https://i.imgur.com/hbNtlcJ.jpg -O " + home_dir + image_name)
+	
+	# Now set the backround	
+	os.environ["DISPLAY"] = ":0"
+	os.system("gsettings set org.gnome.desktop.background picture-uri file://" + home_dir + image_name)
+
+	"""
 	# Get the files in the user's home folder
 	stdin, stdout, stderr = ssh.exec_command("ls " + home_dir)
 
@@ -119,30 +130,39 @@ def set_background(ssh, host):
 	# Now try setting the background
 	try:
 		print (" Trying to set desktop background")
-		stdin, stdout, stderr = ssh.exec_command("export DISPLAY=:0")			
+		
+	
+
+
+
+
+		#stdin, stdout, stderr = ssh.exec_command("export DISPLAY=:0")			
 		# No output from these
 		#print (stdout.readlines())
 		#print (stderr.readlines())
 		# Following command works when run manually on target machine, but not through ssh
-		print ("tying for pid")	
-		stdin,stdout,stderr = ssh.exec_command("echo pid=$(pgrep gnome-session)")
+		#print ("tying for pid")	
+		#stdin,stdout,stderr = ssh.exec_command("echo pid=$(pgrep gnome-session)")
 		#print (stdout.readlines())
 		#print (stdout.readlines())
 		#print (stdout.readlines())	
 		#print (sys.__stdout_)
-		pid = stdout.readlines()[0][4:8]
+		#pid = stdout.readlines()[0][4:8]
 		print ("pid is: " + pid)
 
-		sudo_prefix = "echo 'cpsc\n' + | sudo -S "
-		stdin,stdout,stderr = ssh.exec_command(sudo_prefix + "export DBUS_SESSION_BUS_ADDRESS=$(grep -z DBUS_SESSION_BUS_ADDRESS /proc/" + pid + "/environ | cut -d= -f2-) && " + sudo_prefix + "gsettings set org.gnome.desktop.background picture-uri \"file://" + home_dir + image_name + "\"")
-		#print ("export dbus...")
-		#print (stdout.readlines())
-		#print (stderr.readlines())
+		#sudo_prefix = "echo 'cpsc\n' + | sudo -S "
+		#stdin,stdout,stderr = ssh.exec_command("export DBUS_SESSION_BUS_ADDRESS=$(grep -z DBUS_SESSION_BUS_ADDRESS /proc/" + pid + "/environ | cut -d= -f2-) && " + sudo_prefix + "gsettings set org.gnome.desktop.background picture-uri \"file://" + home_dir + image_name + "\"")
+		#chan = ssh.invoke_shell()
+		#command_list = ["\nexport pid=$(pgrep gnome-session)", "\nexport DBUS_SESSION_ADDRESS=$(grep -z DBUS_SESSION_BUS_ADDRESS /proc/$" + pid + "/environ | cut -d= -f2-)", sudo_prefix + "gsettings set org.gnome.desktop.background picturerui \"file://" + home_dir + image_name  "\""]
+		#ssh.invoke_shell()
+		#for command in command_list:
+		#	chan.send(command)
+
 		#stdin,stdout,stderr = ssh.exec_command(
 		#sudo_prefix + "gsettings set org.gnome.desktop.background picture-uri \"file://" + home_dir + image_name + "\"")
-		print ("gsettings...")
-		print (stdout.readlines())
-		print (stderr.readlines())
+		#print ("gsettings...")
+		#print (stdout.readlines())
+		#print (stderr.readlines())
 
 
 		#prefix = "echo '" + remote_password + "' | sudo -S "
@@ -151,10 +171,10 @@ def set_background(ssh, host):
 		# No output from these either
 		# print (stdout.readlines())
 		# print (stderr.readlines())
-		time.sleep(14)
+		#time.sleep(14)
 	except:
 		print("Error with setting gnome desktop background\n")
-	
+	"""
 
 if __name__ == "__main__":
 	""" Main program that performs the scan """
@@ -232,7 +252,7 @@ if __name__ == "__main__":
 
 		# Try changing the background on remote host
 		try:
-			set_background(ssh, host)
+			set_background(ssh)
 		except Exception as e:
 			print ("%s[!] Error setting desktop background\n" % (offset))
 			pass
